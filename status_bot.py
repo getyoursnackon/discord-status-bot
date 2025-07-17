@@ -108,7 +108,7 @@ async def post_summary(votes: dict[int, str]):
     yes = [uid for uid, v in votes.items() if v == "yes"]
     
     # add date for readability
-    today = datetime.datetime.now().strftime("%m/%d")
+    today = datetime.datetime.now().strftime("%b %d")
     
     if len(yes) == len(MEMBERS):
         await chan.send(f"✅ **{today}** everyone is in – hop on voice!")
