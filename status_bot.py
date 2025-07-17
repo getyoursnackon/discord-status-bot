@@ -20,9 +20,13 @@
 #   !config              – show current configuration
 #   !test                – test poll (sends DMs immediately)
 #   !ping                – simple ping/pong test
+#   !settimezone ZONE    – set timezone (e.g. US/Eastern, US/Pacific)
+# 
+# Multiple commands can be used in one message separated by semicolons or newlines:
+#   !ping; !showconfig; !settime 21:00
 # bot saves persistent config in ./bot_config.json so changes survive restarts.
 
-import os, asyncio, datetime, json, discord
+import os, asyncio, datetime, json, discord, pytz
 from discord.ext import tasks, commands
 
 TOKEN   = os.getenv("DISCORD_TOKEN")
@@ -37,10 +41,11 @@ def load_config():
     """Load all config from file, with env var fallbacks."""
     default_config = {
         "hour": int(os.getenv("POLL_HOUR", 20)),
-        "minute": int(os.getenv("POLL_MINUTE", 59)),
+        "minute": int(os.getenv("POLL_MINUTE", 45)),
         "members": [int(x) for x in os.getenv("MEMBER_IDS", "").split(',') if x],
         "channel_id": int(os.getenv("STATUS_CHANNEL_ID", 0)),
-        "timeout": TIMEOUT
+        "timeout": TIMEOUT,
+        "timezone": os.getenv("TIMEZONE", "US/Eastern")
     }
     
     if os.path.exists(CONFIG):
@@ -67,6 +72,7 @@ POLL_M = config["minute"]
 MEMBERS = config["members"]
 CHAN_ID = config["channel_id"]
 TIMEOUT = config["timeout"]
+TIMEZONE = config["timezone"]
 
 intents = discord.Intents.default()
 intents.message_content = True  # needed for commands
@@ -108,7 +114,8 @@ async def post_summary(votes: dict[int, str]):
     yes = [uid for uid, v in votes.items() if v == "yes"]
     
     # add date for readability
-    today = datetime.datetime.now().strftime("%b %d")
+    tz = pytz.timezone(TIMEZONE)
+    today = datetime.datetime.now(tz).strftime("%b %d")
     
     if len(yes) == len(MEMBERS):
         await chan.send(f"✅ **{today}** everyone is in – hop on voice!")
@@ -130,7 +137,8 @@ def due_time():
 
 
 def poll_due() -> bool:
-    now = datetime.datetime.now()
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.datetime.now(tz)
     h, m = due_time()
     return now.hour == h and now.minute == m
 
@@ -152,6 +160,7 @@ async def nightly_poll():
         except Exception as e:
             print("dm failed", uid, e)
     await view.wait()
+    # always post summary, even if people don't respond
     await post_summary(votes)
 
 # ---------- commands --------------------------------------------------------
@@ -226,6 +235,19 @@ async def settimeout(ctx, minutes: int):
     save_config(config)
     await ctx.send(f"response timeout set to {minutes} minutes ✅")
 
+@bot.command(help="set timezone, ex: !settimezone US/Pacific")
+async def settimezone(ctx, timezone: str):
+    try:
+        # validate timezone
+        pytz.timezone(timezone)
+        global TIMEZONE
+        TIMEZONE = timezone
+        config["timezone"] = TIMEZONE
+        save_config(config)
+        await ctx.send(f"timezone set to {timezone} ✅")
+    except pytz.exceptions.UnknownTimeZoneError:
+        await ctx.send("❌ Invalid timezone. Examples: US/Eastern, US/Pacific, UTC, Europe/London")
+
 @bot.command(help="show current configuration")
 async def showconfig(ctx):
     member_names = []
@@ -247,9 +269,10 @@ async def showconfig(ctx):
     embed = discord.Embed(title="Bot Configuration", color=0x00ff00)
     embed.add_field(name="Members", value=", ".join(member_names) if member_names else "None set", inline=False)
     embed.add_field(name="Status Channel", value=channel_name, inline=True)
-    embed.add_field(name="Poll Time", value=f"{POLL_H:02d}:{POLL_M:02d}", inline=True)
+    embed.add_field(name="Poll Time", value=f"{POLL_H:02d}:{POLL_M:02d} {TIMEZONE}", inline=True)
     embed.add_field(name="Timeout", value=f"{TIMEOUT} minutes", inline=True)
     embed.add_field(name="Auto-poll", value="🔔 Enabled" if not os.path.exists(KILL) else "🔇 Disabled", inline=True)
+    embed.add_field(name="Timezone", value=TIMEZONE, inline=True)
     
     await ctx.send(embed=embed)
 
@@ -292,9 +315,38 @@ async def test(ctx):
 # ---------- lifecycle -------------------------------------------------------
 
 @bot.event
+async def on_message(message):
+    # ignore bot messages
+    if message.author == bot.user:
+        return
+    
+    # check for multiple commands (separated by semicolons or newlines)
+    content = message.content.strip()
+    if content.startswith('!'):
+        # split by semicolon or newline
+        commands = [cmd.strip() for cmd in content.replace('\n', ';').split(';') if cmd.strip()]
+        
+        if len(commands) > 1:
+            # multiple commands found
+            for cmd in commands:
+                if cmd.startswith('!'):
+                    # create a fake message for each command
+                    fake_msg = type('FakeMessage', (), {
+                        'content': cmd,
+                        'author': message.author,
+                        'channel': message.channel,
+                        'guild': message.guild
+                    })()
+                    await bot.process_commands(fake_msg)
+            return
+    
+    # process normal single commands
+    await bot.process_commands(message)
+
+@bot.event
 async def on_ready():
     print("bot online as", bot.user)
-    print(f"config: {len(MEMBERS)} members, channel {CHAN_ID}, time {POLL_H:02d}:{POLL_M:02d}")
+    print(f"config: {len(MEMBERS)} members, channel {CHAN_ID}, time {POLL_H:02d}:{POLL_M:02d} {TIMEZONE}")
     nightly_poll.start()
 
 bot.run(TOKEN)
