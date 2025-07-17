@@ -68,8 +68,7 @@ MEMBERS = config["members"]
 CHAN_ID = config["channel_id"]
 TIMEOUT = config["timeout"]
 
-intents = discord.Intents.none()
-intents.dm_messages = True
+intents = discord.Intents.default()
 intents.message_content = True  # needed for commands
 bot = commands.Bot(command_prefix="!", intents=intents)
 
