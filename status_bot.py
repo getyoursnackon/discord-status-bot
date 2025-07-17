@@ -106,10 +106,14 @@ async def post_summary(votes: dict[int, str]):
         return
     chan = bot.get_channel(CHAN_ID) or await bot.fetch_channel(CHAN_ID)
     yes = [uid for uid, v in votes.items() if v == "yes"]
+    
+    # add date for readability
+    today = datetime.datetime.now().strftime("%m/%d")
+    
     if len(yes) == len(MEMBERS):
-        await chan.send("✅ everyone is in – hop on voice!")
+        await chan.send(f"✅ **{today}** everyone is in – hop on voice!")
     else:
-        await chan.send("❌ session skipped (not all confirmed)")
+        await chan.send(f"❌ **{today}** session skipped (not all confirmed)")
 
 
 def due_time():
