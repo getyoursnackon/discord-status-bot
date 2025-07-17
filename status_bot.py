@@ -91,11 +91,11 @@ class PollView(discord.ui.View):
             self.stop()
 
     @discord.ui.button(label="work", style=discord.ButtonStyle.success)
-    async def yes(self, _: discord.ui.Button, inter: discord.Interaction):
+    async def yes(self, inter: discord.Interaction, _: discord.ui.Button):
         await self._handle(inter, "yes")
 
     @discord.ui.button(label="skip", style=discord.ButtonStyle.danger)
-    async def no(self, _: discord.ui.Button, inter: discord.Interaction):
+    async def no(self, inter: discord.Interaction, _: discord.ui.Button):
         await self._handle(inter, "no")
 
 # ---------- utility ---------------------------------------------------------
